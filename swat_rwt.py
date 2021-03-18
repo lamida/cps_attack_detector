@@ -1,6 +1,8 @@
 import sys
 import time
 from enum import Enum
+from typing import List
+from collections import defaultdict
 
 
 """
@@ -200,6 +202,28 @@ class Tank:
             self.pump_out.turn_on()
 
 
+class CusumDetector:
+    def __init__(self, b: float, tau: float, expected_outputs: List[float]):
+        self.b = b
+        self.tau = tau
+        self.expected_outputs = expected_outputs
+        self.s_list = [0] * len(expected_outputs)
+
+    def detect_attack(self, k: int, compromised_output: float) -> bool:
+        if k > len(self.expected_outputs):
+            # skip checking attack if k is beyond the collected expected output
+            return False
+
+        z_k = abs(compromised_output - self.expected_outputs[k]) - self.b
+        new_s = self.s_list[k - 1] + z_k
+        self.s_list[k] = new_s if new_s > 0 else 0
+        print(
+            f"Checking attack. Expected output at k: {k} : {self.expected_outputs[k]}, possibly compromised output: {compromised_output}, s_k: {self.s_list[k]}, tau: {self.tau}")
+        if self.s_list[k] > self.tau:
+            return True
+        return False
+
+
 class Simulator:
     def __init__(self, tick_time: float = 1, speed_factor: float = 1):
         self.p101 = Pump("P101")
@@ -210,20 +234,101 @@ class Simulator:
         self.tick_time = tick_time
         self.speed_factor = speed_factor
 
-    def run(self):
+    def run_continuously(self):
         print("=========================================================================================")
         print(
             f"Running simulator with tick time: {self.tick_time} and speed factor: {self.speed_factor}")
         print("Press CTRL + C or CTRL + Z to stop")
         print("=========================================================================================")
         print()
-        c = 0
         while(True):
             self.t101.update_state(self.speed_factor)
             print("Tank water level:", self.t101.current_level)
             time.sleep(self.tick_time)
 
+    def run_for_number_iteration(self, iteration_number: int, attack_at: int = -1, cusum_detector: CusumDetector = None) -> List[float]:
+        output = []
+        n = 0
+        while(True):
+            self.t101.update_state(self.speed_factor)
+            # We are running detector here
+            if cusum_detector is not None:
+                if cusum_detector.detect_attack(n, self.t101.current_level):
+                    raise Exception("attack is detected at n:",
+                                    n, "Exiting simulation")
+            print("Tank water level:", self.t101.current_level)
+            output.append(self.t101.current_level)
+            if attack_at != -1 and n == attack_at:
+                self.lit101.high = 1000
+            if n == (iteration_number - 1):
+                break
+            n += 1
+
+        return output
+
+
+def run_continuously():
+    simulator = Simulator(tick_time=0.5, speed_factor=120)
+    simulator.run_continuously()
+
+
+"""
+Run one simulation without attack and then followed by another simulation with attack at k time which will
+set the lit101 sensor high into 1000 mm.
+
+When attack_at is set to -1, it means no attack.
+"""
+
+
+def run_simulate_attack(series_length: int, cusum_b: float, cusum_tau=float, attack_at: int = -1):
+    simulator = Simulator(tick_time=0.1, speed_factor=120)
+    expected_outputs = simulator.run_for_number_iteration(series_length)
+
+    cusum_detector = CusumDetector(
+        b=cusum_b, tau=cusum_tau, expected_outputs=expected_outputs)
+    simulator.run_for_number_iteration(
+        iteration_number=series_length, attack_at=attack_at, cusum_detector=cusum_detector)
+
+
+def check_false_alarm(series_length: int, cusum_b: float):
+    false_alarm = defaultdict(int)
+    for tau in range(0, 100000, 1000):
+        try:
+            run_simulate_attack(series_length=series_length,
+                                cusum_b=cusum_b, cusum_tau=tau)
+            false_alarm[tau] = 0
+        except Exception as e:
+            print(e)
+
+            false_alarm[tau] += 1
+    return false_alarm
+
+
+def check_attack_effectiveness(series_length: int, cusum_tau: float, attack_at: int = -1):
+    effective_detection = defaultdict(int)
+    for bias in range(0, 100):
+        try:
+            run_simulate_attack(series_length=series_length,
+                                cusum_b=bias, cusum_tau=cusum_tau, attack_at=attack_at)
+            effective_detection[bias] = 0
+        except Exception as e:
+            print(e)
+
+            effective_detection[bias] += 1
+    return effective_detection
+
 
 if __name__ == "__main__":
-    simulator = Simulator(tick_time=1, speed_factor=500)
-    simulator.run()
+    # Run simulator continously
+    # run_continuously()
+
+    try:
+        run_simulate_attack(series_length=1000, cusum_b=0.1, cusum_tau=8500)
+    except Exception as e:
+        print("Detected attack: ", e)
+
+    # false_alarm_rate = check_false_alarm(series_length=200, cusum_b=0.1)
+    # print("false alarm rate: ", false_alarm_rate)
+
+    # effective_detection = check_attack_effectiveness(series_length=200, cusum_tau=8000, attack_at=100)
+    # print("attack effectiveness: ", effective_detection)
