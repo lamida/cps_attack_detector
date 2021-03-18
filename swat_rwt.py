@@ -122,6 +122,19 @@ class Pump:
 
 
 """
+Level sensor.
+"""
+
+
+class LevelSensor:
+
+    def __init__(self, name: str, high: float, low: float):
+        self.name = name
+        self.high = high
+        self.low = low
+
+
+"""
 Tank is a water container. It maintain a water level. It connects to an inlet valve and sink to a pump out. 
 The water level in a tank must never goes to zero.
 """
@@ -132,11 +145,10 @@ class Tank:
     Create a tank.
     """
 
-    def __init__(self, name: str, current_level: float, high: float, low: float, inlet_valve: Valve, pump_out: Pump):
+    def __init__(self, name: str, current_level: float, level_sensor: LevelSensor, inlet_valve: Valve, pump_out: Pump):
         self.name = name
         self.current_level = current_level
-        self.high = high
-        self.low = low
+        self.level_sensor = level_sensor
         self.inlet_valve = inlet_valve
         self.pump_out = pump_out
 
@@ -172,18 +184,18 @@ class Tank:
         else:
             self.current_level = 0
 
-        if new_level > self.high:
+        if new_level > self.level_sensor.high:
             print("Warning! The water is overflowing!")
 
-        if self.current_level <= self.low:
+        if self.current_level <= self.level_sensor.low:
             self.inlet_valve.open()
             self.pump_out.turn_off()
 
-        if self.current_level >= self.high:
+        if self.current_level >= self.level_sensor.high:
             self.inlet_valve.close()
             self.pump_out.turn_on()
 
-        if self.current_level > self.low and self.current_level < self.high:
+        if self.current_level > self.level_sensor.low and self.current_level < self.level_sensor.high:
             self.inlet_valve.open()
             self.pump_out.turn_on()
 
@@ -192,17 +204,20 @@ class Simulator:
     def __init__(self, tick_time: float = 1, speed_factor: float = 1):
         self.p101 = Pump("P101")
         self.mv101 = Valve("MV101")
-        self.t101 = Tank(name="T101", current_level=600, low=500,
-                         high=800, inlet_valve=self.mv101, pump_out=self.p101)
+        self.lit101 = LevelSensor(name="LIT101", low=500, high=800)
+        self.t101 = Tank(name="T101", current_level=600, level_sensor=self.lit101,
+                         inlet_valve=self.mv101, pump_out=self.p101)
         self.tick_time = tick_time
         self.speed_factor = speed_factor
 
     def run(self):
         print("=========================================================================================")
-        print(f"Running simulator with tick time: {self.tick_time} and speed factor: {self.speed_factor}") 
+        print(
+            f"Running simulator with tick time: {self.tick_time} and speed factor: {self.speed_factor}")
         print("Press CTRL + C or CTRL + Z to stop")
         print("=========================================================================================")
         print()
+        c = 0
         while(True):
             self.t101.update_state(self.speed_factor)
             print("Tank water level:", self.t101.current_level)
