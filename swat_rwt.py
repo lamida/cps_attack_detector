@@ -256,9 +256,10 @@ class Simulator:
                 if cusum_detector.detect_attack(n, self.t101.current_level):
                     raise Exception("attack is detected at n:",
                                     n, "Exiting simulation")
-            print("Tank water level:", self.t101.current_level)
+            print(n, "Tank water level:", self.t101.current_level)
             output.append(self.t101.current_level)
             if attack_at != -1 and n == attack_at:
+                print("Initiating attack!!!!")
                 self.lit101.high = 1000
             if n == (iteration_number - 1):
                 break
@@ -280,19 +281,19 @@ When attack_at is set to -1, it means no attack.
 """
 
 
-def run_simulate_attack(series_length: int, cusum_b: float, cusum_tau=float, attack_at: int = -1):
+def run_simulate_attack(series_length: int, cusum_b: float, cusum_tau=float, attack_at: int = -1, detect_attack: bool = True):
     simulator = Simulator(tick_time=0.1, speed_factor=120)
     expected_outputs = simulator.run_for_number_iteration(series_length)
 
     cusum_detector = CusumDetector(
-        b=cusum_b, tau=cusum_tau, expected_outputs=expected_outputs)
+        b=cusum_b, tau=cusum_tau, expected_outputs=expected_outputs) if detect_attack else None
     simulator.run_for_number_iteration(
         iteration_number=series_length, attack_at=attack_at, cusum_detector=cusum_detector)
 
 
 def check_false_alarm(series_length: int, cusum_b: float):
     false_alarm = defaultdict(int)
-    for tau in range(0, 100000, 1000):
+    for tau in range(0, 50000, 1000):
         try:
             run_simulate_attack(series_length=series_length,
                                 cusum_b=cusum_b, cusum_tau=tau)
@@ -306,7 +307,7 @@ def check_false_alarm(series_length: int, cusum_b: float):
 
 def check_attack_effectiveness(series_length: int, cusum_tau: float, attack_at: int = -1):
     effective_detection = defaultdict(int)
-    for bias in range(0, 100):
+    for bias in range(0, 100, 10):
         try:
             run_simulate_attack(series_length=series_length,
                                 cusum_b=bias, cusum_tau=cusum_tau, attack_at=attack_at)
@@ -322,13 +323,10 @@ if __name__ == "__main__":
     # Run simulator continously
     # run_continuously()
 
-    try:
-        run_simulate_attack(series_length=1000, cusum_b=0.1, cusum_tau=8500)
-    except Exception as e:
-        print("Detected attack: ", e)
+    # run_simulate_attack(series_length=200, cusum_b=0.1, attack_at=120, detect_attack=False)
 
     # false_alarm_rate = check_false_alarm(series_length=200, cusum_b=0.1)
     # print("false alarm rate: ", false_alarm_rate)
 
-    # effective_detection = check_attack_effectiveness(series_length=200, cusum_tau=8000, attack_at=100)
-    # print("attack effectiveness: ", effective_detection)
+    effective_detection = check_attack_effectiveness(series_length=200, cusum_tau=8000, attack_at=100)
+    print("attack effectiveness: ", effective_detection)
